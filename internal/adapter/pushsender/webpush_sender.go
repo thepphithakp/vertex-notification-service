@@ -40,6 +40,6 @@ func (w *WebPushSender) Send(ctx context.Context, sub domain.PushSubscription, p
 	if err != nil {
 		return 0, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return resp.StatusCode, nil
 }
