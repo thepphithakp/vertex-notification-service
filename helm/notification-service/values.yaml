@@ -1,0 +1,137 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/thepphithakp/vertex-notification-service
+  pullPolicy: IfNotPresent
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: false
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+  readOnlyRootFilesystem: true
+
+service:
+  type: ClusterIP
+  port: 4003
+
+# --- Gateway API ----------------------------------------------------------
+#
+# service ใหม่ ไม่มี ingress-nginx เดิมให้ย้ายผ่าน — chart นี้เป็นเจ้าของ route
+# ของตัวเองได้ทันทีโดยไม่ต้องผ่านขั้น "ไฟล์ชั่วคราวใน infra/gateway/" เหมือน
+# pet/event/bff ก่อนหน้านี้
+httpRoute:
+  enabled: true
+  parentRef:
+    name: vertex-gateway
+    namespace: ""
+    sectionName: http
+  # ⚠️ ห้ามใส่ค่าจริงลงไฟล์นี้ — repo เป็น public
+  #    ส่งตอน deploy: --set httpRoute.hostnames[0]="${{ secrets.PUBLIC_HOST }}"
+  hostnames: []
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 32Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# --- Lifecycle ---
+#
+# ⚠️ SHUTDOWN_DRAIN_DELAY + SHUTDOWN_TIMEOUT (5+20 = 25s)
+#    < terminationGracePeriodSeconds (45s) ไม่งั้นโดน SIGKILL ก่อนปิดเสร็จ
+terminationGracePeriodSeconds: 45
+
+livenessProbe:
+  httpGet:
+    path: /livez
+    port: http
+  periodSeconds: 15
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 2
+
+startupProbe:
+  httpGet:
+    path: /livez
+    port: http
+  periodSeconds: 2
+  failureThreshold: 30
+
+shutdown:
+  drainDelay: 5s
+  timeout: 20s
+
+# --- Database ---
+#
+# notification_app ทำได้แค่ DML ใน schema notification เท่านั้น
+# (ดู vertex-migrations/notification/bootstrap/000_create_roles.sql)
+db:
+  host: postgres
+  port: "5432"
+  name: vertex
+  sslMode: disable
+  searchPath: notification
+  credentialsSecret: notification-db-app
+
+# --- JWT ---
+#
+# public key ชุดเดียวกับที่ auth-service ออก token — ใช้ตรวจ /api/v1/push/*
+jwt:
+  publicKeysSecret: jwt-public-keys
+  issuer: ""
+  audience: ""
+
+# --- VAPID ---
+#
+# คีย์คู่ที่ใช้เซ็น push message (RFC 8292) — public key ฝังอยู่ใน JS ของ PWA
+# อยู่แล้ว (ไม่ใช่ความลับ) แต่ private key ต้องเก็บเป็นความลับใน Secret เท่านั้น
+vapid:
+  keysSecret: notification-vapid-keys
+  # "mailto:..." ตามข้อกำหนดของ VAPID — push service (FCM/Apple) ใช้ติดต่อกลับ
+  # ถ้ามีการใช้งานผิดปกติ ไม่ใช่ความลับ ใส่ตรงนี้ได้
+  subscriber: ""
+
+# --- Push service token ---
+#
+# token ที่ service อื่น (เช่น pet-service ตอนถึงกำหนดเตือนจอดรถซ้อน) ต้องส่งมา
+# ใน X-Service-Token ตอนเรียก POST /api/v1/internal/push/send
+pushToken:
+  tokenSecret: push-service-token
+
+env: {}
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  scrapeTimeout: 10s
+  additionalLabels:
+    release: prometheus-grafana
