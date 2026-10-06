@@ -22,6 +22,16 @@ type SubscriptionRepository interface {
 	ListByUser(ctx context.Context, userID string) ([]domain.PushSubscription, error)
 }
 
+// NotificationLogRepository เก็บประวัติการแจ้งเตือนสำหรับ in-app feed
+// (แยกจาก SubscriptionRepository เพราะเป็นคนละ concern — ตัวนี้คือ "ประวัติ
+// สิ่งที่เคยแจ้ง" ไม่ใช่ "อุปกรณ์ที่รับ push ได้")
+type NotificationLogRepository interface {
+	Create(ctx context.Context, log *domain.NotificationLog) error
+	ListByUser(ctx context.Context, userID string, limit int) ([]domain.NotificationLog, error)
+	UnreadCount(ctx context.Context, userID string) (int64, error)
+	MarkAllRead(ctx context.Context, userID string) error
+}
+
 // Sender ส่ง payload ไปยัง endpoint จริง — แยก interface ออกจาก webpush-go
 // เพื่อให้ mock ตอน unit test ได้โดยไม่ต้องยิง network จริง
 type Sender interface {
@@ -56,4 +66,15 @@ type PushUseCase interface {
 	Subscribe(ctx context.Context, userID string, in SubscribeInput) error
 	Unsubscribe(ctx context.Context, userID, endpoint string) error
 	SendToUser(ctx context.Context, userID string, msg Message) (SendResult, error)
+
+	ListNotifications(ctx context.Context, userID string) (NotificationFeed, error)
+	MarkAllRead(ctx context.Context, userID string) error
+}
+
+const NotificationFeedLimit = 50
+
+// NotificationFeed คือสิ่งที่หน้า in-app notification feed ต้องใช้แสดงผล
+type NotificationFeed struct {
+	Items       []domain.NotificationLog `json:"items"`
+	UnreadCount int64                    `json:"unreadCount"`
 }

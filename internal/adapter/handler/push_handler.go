@@ -22,6 +22,8 @@ func NewPushHandler(useCase port.PushUseCase) *PushHandler {
 func (h *PushHandler) RegisterUserRoutes(r fiber.Router) {
 	r.Post("/subscribe", h.Subscribe)
 	r.Delete("/subscribe", h.Unsubscribe)
+	r.Get("/notifications", h.ListNotifications)
+	r.Post("/notifications/read", h.MarkAllRead)
 }
 
 // RegisterServiceRoutes ผูก endpoint ที่ service อื่นเรียกเพื่อสั่งส่ง push
@@ -109,6 +111,29 @@ func (h *PushHandler) Send(c *fiber.Ctx) error {
 		return handleUseCaseError(c, err)
 	}
 	return c.JSON(result)
+}
+
+func (h *PushHandler) ListNotifications(c *fiber.Ctx) error {
+	actor, ok := middleware.ActorFrom(c)
+	if !ok {
+		return unauthorized(c)
+	}
+	feed, err := h.useCase.ListNotifications(c.UserContext(), actor.UserID)
+	if err != nil {
+		return handleUseCaseError(c, err)
+	}
+	return c.JSON(feed)
+}
+
+func (h *PushHandler) MarkAllRead(c *fiber.Ctx) error {
+	actor, ok := middleware.ActorFrom(c)
+	if !ok {
+		return unauthorized(c)
+	}
+	if err := h.useCase.MarkAllRead(c.UserContext(), actor.UserID); err != nil {
+		return handleUseCaseError(c, err)
+	}
+	return c.SendStatus(fiber.StatusNoContent)
 }
 
 func handleUseCaseError(c *fiber.Ctx, err error) error {

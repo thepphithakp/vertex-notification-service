@@ -38,8 +38,9 @@ func NewApp(db *gorm.DB, cfg config.Config, auth middleware.AuthConfig) (*fiber.
 	app.Get("/metrics", middleware.MetricsHandler())
 
 	repo := repository.NewGORMSubscriptionRepository(db)
+	logRepo := repository.NewGORMNotificationLogRepository(db)
 	sender := pushsender.NewWebPushSender(cfg.VAPID.PublicKey, cfg.VAPID.PrivateKey, cfg.VAPID.Subscriber)
-	svc := application.NewPushService(repo, sender)
+	svc := application.NewPushService(repo, logRepo, sender)
 	h := handler.NewPushHandler(svc)
 
 	// ── ผู้ใช้ผ่าน PWA: subscribe/unsubscribe ต้องมี JWT ────────────────────

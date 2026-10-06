@@ -22,13 +22,14 @@ const (
 )
 
 type PushService struct {
-	repo   port.SubscriptionRepository
-	sender port.Sender
-	now    func() time.Time
+	repo    port.SubscriptionRepository
+	logRepo port.NotificationLogRepository
+	sender  port.Sender
+	now     func() time.Time
 }
 
-func NewPushService(repo port.SubscriptionRepository, sender port.Sender) *PushService {
-	return &PushService{repo: repo, sender: sender, now: time.Now}
+func NewPushService(repo port.SubscriptionRepository, logRepo port.NotificationLogRepository, sender port.Sender) *PushService {
+	return &PushService{repo: repo, logRepo: logRepo, sender: sender, now: time.Now}
 }
 
 func (s *PushService) Subscribe(ctx context.Context, userID string, in port.SubscribeInput) error {
@@ -93,6 +94,19 @@ func (s *PushService) SendToUser(ctx context.Context, userID string, msg port.Me
 		return result, &ValidationError{Field: "title/body", Reason: "ต้องไม่ว่าง"}
 	}
 
+	// บันทึกลง in-app feed ก่อนเสมอ ไม่ว่าจะมี subscription ให้ส่ง push จริง
+	// หรือไม่ — ผู้ใช้ที่ยังไม่เปิด push (หรือปิดไปแล้ว) ควรยังเห็นในแอปได้
+	// ถือเป็น "ระบบพยายามแจ้งแล้ว" ไม่ใช่ "push ไปถึงเครื่องจริง"
+	if err := s.logRepo.Create(ctx, &domain.NotificationLog{
+		ID:     uuid.New(),
+		UserID: userID,
+		Title:  msg.Title,
+		Body:   msg.Body,
+		URL:    msg.URL,
+	}); err != nil {
+		slog.ErrorContext(ctx, "บันทึก notification log ไม่สำเร็จ", "user_id", userID, "error", err)
+	}
+
 	subs, err := s.repo.ListByUser(ctx, userID)
 	if err != nil {
 		return result, err
@@ -126,6 +140,22 @@ func (s *PushService) SendToUser(ctx context.Context, userID string, msg port.Me
 	}
 
 	return result, nil
+}
+
+func (s *PushService) ListNotifications(ctx context.Context, userID string) (port.NotificationFeed, error) {
+	items, err := s.logRepo.ListByUser(ctx, userID, port.NotificationFeedLimit)
+	if err != nil {
+		return port.NotificationFeed{}, err
+	}
+	unread, err := s.logRepo.UnreadCount(ctx, userID)
+	if err != nil {
+		return port.NotificationFeed{}, err
+	}
+	return port.NotificationFeed{Items: items, UnreadCount: unread}, nil
+}
+
+func (s *PushService) MarkAllRead(ctx context.Context, userID string) error {
+	return s.logRepo.MarkAllRead(ctx, userID)
 }
 
 // ValidationError บอกว่าผู้เรียกส่งอะไรมาผิด เพื่อให้ handler ตอบ 400 ได้

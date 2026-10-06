@@ -1,0 +1,30 @@
+package domain
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
+
+// NotificationLog คือประวัติการแจ้งเตือนที่เคยส่งให้ user คนหนึ่ง — ใช้แสดงเป็น
+// in-app notification feed (แบบกระดิ่งของ Facebook) แยกต่างหากจาก
+// PushSubscription โดยสิ้นเชิง
+//
+// บันทึกทุกครั้งที่มีการเรียก SendToUser ไม่ว่า device จะได้รับ push จริง
+// หรือไม่ (ไม่มี subscription เลยก็ยังบันทึก) เพราะ in-app feed ควรเห็นสิ่งที่
+// "ระบบพยายามแจ้ง" ไม่ใช่แค่สิ่งที่ "push ไปถึงเครื่องจริง"
+type NotificationLog struct {
+	ID uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+
+	UserID string `gorm:"not null" json:"userId"`
+	Title  string `gorm:"not null" json:"title"`
+	Body   string `gorm:"not null" json:"body"`
+	URL    string `json:"url"`
+
+	CreatedAt time.Time `gorm:"not null;default:now()" json:"createdAt"`
+
+	// ReadAt เป็น NULL แปลว่ายังไม่ได้อ่าน — ใช้คำนวณ unread badge
+	ReadAt *time.Time `json:"readAt,omitempty"`
+}
+
+func (NotificationLog) TableName() string { return "notification_logs" }

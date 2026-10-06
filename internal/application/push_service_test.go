@@ -56,6 +56,27 @@ func (r *fakeRepo) ListByUser(ctx context.Context, userID string) ([]domain.Push
 	return r.subs[userID], nil
 }
 
+type fakeLogRepo struct {
+	created []domain.NotificationLog
+}
+
+func (r *fakeLogRepo) Create(ctx context.Context, log *domain.NotificationLog) error {
+	r.created = append(r.created, *log)
+	return nil
+}
+
+func (r *fakeLogRepo) ListByUser(ctx context.Context, userID string, limit int) ([]domain.NotificationLog, error) {
+	return nil, nil
+}
+
+func (r *fakeLogRepo) UnreadCount(ctx context.Context, userID string) (int64, error) {
+	return 0, nil
+}
+
+func (r *fakeLogRepo) MarkAllRead(ctx context.Context, userID string) error {
+	return nil
+}
+
 type fakeSender struct {
 	statusByEndpoint map[string]int
 	sent             []domain.PushSubscription
@@ -70,7 +91,7 @@ func (s *fakeSender) Send(ctx context.Context, sub domain.PushSubscription, payl
 }
 
 func TestSubscribe_RejectsNonHTTPSEndpoint(t *testing.T) {
-	svc := NewPushService(newFakeRepo(), &fakeSender{})
+	svc := NewPushService(newFakeRepo(), &fakeLogRepo{}, &fakeSender{})
 	err := svc.Subscribe(context.Background(), "user-1", port.SubscribeInput{
 		Endpoint: "http://insecure.example/push",
 		P256dh:   "key", Auth: "auth",
@@ -81,7 +102,7 @@ func TestSubscribe_RejectsNonHTTPSEndpoint(t *testing.T) {
 }
 
 func TestSubscribe_RejectsMissingKeys(t *testing.T) {
-	svc := NewPushService(newFakeRepo(), &fakeSender{})
+	svc := NewPushService(newFakeRepo(), &fakeLogRepo{}, &fakeSender{})
 	err := svc.Subscribe(context.Background(), "user-1", port.SubscribeInput{
 		Endpoint: "https://push.example/abc",
 	})
@@ -92,7 +113,7 @@ func TestSubscribe_RejectsMissingKeys(t *testing.T) {
 
 func TestSubscribe_StoresValidSubscription(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewPushService(repo, &fakeSender{})
+	svc := NewPushService(repo, &fakeLogRepo{}, &fakeSender{})
 	err := svc.Subscribe(context.Background(), "user-1", port.SubscribeInput{
 		Endpoint: "https://push.example/abc",
 		P256dh:   "key", Auth: "auth", UserAgent: "test-agent",
@@ -110,7 +131,7 @@ func TestSubscribe_StoresValidSubscription(t *testing.T) {
 
 func TestSendToUser_CountsSentAndPrunesDeadEndpoints(t *testing.T) {
 	repo := newFakeRepo()
-	svc := NewPushService(repo, &fakeSender{})
+	svc := NewPushService(repo, &fakeLogRepo{}, &fakeSender{})
 
 	aliveID := uuid.New()
 	deadID := uuid.New()
@@ -143,9 +164,29 @@ func TestSendToUser_CountsSentAndPrunesDeadEndpoints(t *testing.T) {
 }
 
 func TestSendToUser_RejectsEmptyMessage(t *testing.T) {
-	svc := NewPushService(newFakeRepo(), &fakeSender{})
+	svc := NewPushService(newFakeRepo(), &fakeLogRepo{}, &fakeSender{})
 	_, err := svc.SendToUser(context.Background(), "user-1", port.Message{})
 	if err == nil {
 		t.Fatal("ต้อง reject title/body ว่าง")
+	}
+}
+
+func TestSendToUser_AlwaysLogsForInAppFeed(t *testing.T) {
+	// ไม่มี subscription เลยสักตัว — ยังต้องบันทึก log เพราะ in-app feed
+	// ควรเห็นว่า "ระบบพยายามแจ้งแล้ว" แม้ผู้ใช้ไม่เคยเปิด push
+	logRepo := &fakeLogRepo{}
+	svc := NewPushService(newFakeRepo(), logRepo, &fakeSender{})
+
+	_, err := svc.SendToUser(context.Background(), "user-1", port.Message{
+		Title: "เตือนจอดรถ", Body: "ถึงกำหนดแล้ว",
+	})
+	if err != nil {
+		t.Fatalf("ไม่ควร error: %v", err)
+	}
+	if len(logRepo.created) != 1 {
+		t.Fatalf("ต้องบันทึก notification log 1 รายการแม้ไม่มี subscription ได้ %d", len(logRepo.created))
+	}
+	if logRepo.created[0].UserID != "user-1" || logRepo.created[0].Title != "เตือนจอดรถ" {
+		t.Errorf("เนื้อหา log ผิด: %+v", logRepo.created[0])
 	}
 }

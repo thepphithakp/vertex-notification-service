@@ -50,7 +50,7 @@ func CloseDB(db *gorm.DB) error {
 
 // requiredSchemaVersion คือเวอร์ชัน migration ต่ำสุดที่โค้ดชุดนี้ต้องการ
 // ต้องเพิ่มค่านี้ทุกครั้งที่เขียน migration ใหม่ที่โค้ดพึ่งพา (ดู vertex-migrations/README.md)
-const requiredSchemaVersion = 1
+const requiredSchemaVersion = 2
 
 // AssertSchemaVersion ยืนยันว่า Flyway รันครบก่อนรับ request — ไม่มี AutoMigrate
 func AssertSchemaVersion(ctx context.Context, db *gorm.DB) error {
