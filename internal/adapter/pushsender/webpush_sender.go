@@ -2,6 +2,7 @@ package pushsender
 
 import (
 	"context"
+	"strings"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 
@@ -32,7 +33,15 @@ func (w *WebPushSender) Send(ctx context.Context, sub domain.PushSubscription, p
 			Auth:   sub.Auth,
 		},
 	}, &webpush.Options{
-		Subscriber:      w.subscriber,
+		// ⚠️ webpush-go เติม "mailto:" ให้เองถ้าค่าที่ส่งเข้าไปไม่ได้ขึ้นต้นด้วย
+		// "https:" (ดู getVAPIDAuthorizationHeader ใน vapid.go) — w.subscriber
+		// ของเรามี "mailto:" ติดมาอยู่แล้วเสมอ (บังคับด้วย config.Load) ถ้าส่งตรงๆ
+		// จะได้ claim "sub" เป็น "mailto:mailto:..." ซึ่งผิดรูปแบบ VAPID
+		//
+		// เจอจริงตอนทดสอบกับ Apple Web Push (web.push.apple.com) ซึ่งตรวจ VAPID
+		// claim เข้มกว่า push service เจ้าอื่น — ปฏิเสธด้วย 403 ไม่ใช่ error
+		// ที่อ่านออกง่ายๆ ส่วน FCM/Mozilla อาจจะปล่อยผ่าน claim ที่ผิดแบบนี้เงียบๆ
+		Subscriber:      vapidSubscriberArg(w.subscriber),
 		VAPIDPublicKey:  w.publicKey,
 		VAPIDPrivateKey: w.privateKey,
 		TTL:             ttlSeconds,
@@ -42,4 +51,10 @@ func (w *WebPushSender) Send(ctx context.Context, sub domain.PushSubscription, p
 	}
 	defer func() { _ = resp.Body.Close() }()
 	return resp.StatusCode, nil
+}
+
+// vapidSubscriberArg กัน "mailto:" ซ้อนกันสองชั้น — แยกออกมาเพื่อให้เทสได้
+// โดยไม่ต้องยิง network จริง (ดูคอมเมนต์ยาวที่จุดเรียกใช้ด้านบน)
+func vapidSubscriberArg(subscriber string) string {
+	return strings.TrimPrefix(subscriber, "mailto:")
 }
