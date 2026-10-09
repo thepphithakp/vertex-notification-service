@@ -2,13 +2,57 @@ package handler
 
 import (
 	"errors"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 
 	"github.com/vertex/notification-service/internal/application"
+	"github.com/vertex/notification-service/internal/domain"
 	"github.com/vertex/notification-service/internal/port"
 	"github.com/vertex/notification-service/pkg/middleware"
 )
+
+// notificationLogResponse คือรูปแบบ JSON ที่ตอบให้ client — เดิมใช้
+// domain.NotificationLog ตรงๆ ผ่าน port.NotificationFeed.Items (มี json tag
+// ติดอยู่กับ domain type เอง) ย้ายมาที่นี่ไม่ให้ domain ต้องรู้จัก wire
+// format คงชื่อ field และรูปแบบเดิมทุกตัวอักษรไว้ ไม่ให้ PWA client พัง
+type notificationLogResponse struct {
+	ID        uuid.UUID  `json:"id"`
+	UserID    string     `json:"userId"`
+	Title     string     `json:"title"`
+	Body      string     `json:"body"`
+	URL       string     `json:"url"`
+	CreatedAt time.Time  `json:"createdAt"`
+	ReadAt    *time.Time `json:"readAt,omitempty"`
+}
+
+func toNotificationLogResponse(n domain.NotificationLog) notificationLogResponse {
+	return notificationLogResponse{
+		ID:        n.ID,
+		UserID:    n.UserID,
+		Title:     n.Title,
+		Body:      n.Body,
+		URL:       n.URL,
+		CreatedAt: n.CreatedAt,
+		ReadAt:    n.ReadAt,
+	}
+}
+
+// notificationFeedResponse คือรูปแบบ JSON ของ port.NotificationFeed — เดิม
+// c.JSON(feed) ตรงๆ พึ่ง json tag ของ domain.NotificationLog ใน Items
+type notificationFeedResponse struct {
+	Items       []notificationLogResponse `json:"items"`
+	UnreadCount int64                     `json:"unreadCount"`
+}
+
+func toNotificationFeedResponse(f port.NotificationFeed) notificationFeedResponse {
+	items := make([]notificationLogResponse, len(f.Items))
+	for i, n := range f.Items {
+		items[i] = toNotificationLogResponse(n)
+	}
+	return notificationFeedResponse{Items: items, UnreadCount: f.UnreadCount}
+}
 
 type PushHandler struct {
 	useCase port.PushUseCase
@@ -122,7 +166,7 @@ func (h *PushHandler) ListNotifications(c *fiber.Ctx) error {
 	if err != nil {
 		return handleUseCaseError(c, err)
 	}
-	return c.JSON(feed)
+	return c.JSON(toNotificationFeedResponse(feed))
 }
 
 func (h *PushHandler) MarkAllRead(c *fiber.Ctx) error {

@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/vertex/notification-service/internal/adapter/repository/model"
 	"github.com/vertex/notification-service/internal/domain"
 )
 
@@ -23,6 +24,7 @@ func NewGORMSubscriptionRepository(db *gorm.DB) *GORMSubscriptionRepository {
 // browser อาจ subscribe ซ้ำด้วย endpoint เดิมแต่คีย์เปลี่ยน (เช่นหลัง
 // reinstall PWA) — ux_push_subscriptions_user_endpoint กันแถวซ้ำไว้ที่ database
 func (r *GORMSubscriptionRepository) Upsert(ctx context.Context, sub *domain.PushSubscription) error {
+	row := model.PushSubscriptionRowFromDomain(*sub)
 	return r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "user_id"}, {Name: "endpoint"}},
@@ -30,21 +32,27 @@ func (r *GORMSubscriptionRepository) Upsert(ctx context.Context, sub *domain.Pus
 				"p256dh", "auth", "user_agent", "last_seen_at",
 			}),
 		}).
-		Create(sub).Error
+		Create(&row).Error
 }
 
 func (r *GORMSubscriptionRepository) Delete(ctx context.Context, userID, endpoint string) error {
 	return r.db.WithContext(ctx).
 		Where("user_id = ? AND endpoint = ?", userID, endpoint).
-		Delete(&domain.PushSubscription{}).Error
+		Delete(&model.PushSubscriptionRow{}).Error
 }
 
 func (r *GORMSubscriptionRepository) DeleteByID(ctx context.Context, id uuid.UUID) error {
-	return r.db.WithContext(ctx).Delete(&domain.PushSubscription{}, "id = ?", id).Error
+	return r.db.WithContext(ctx).Delete(&model.PushSubscriptionRow{}, "id = ?", id).Error
 }
 
 func (r *GORMSubscriptionRepository) ListByUser(ctx context.Context, userID string) ([]domain.PushSubscription, error) {
-	var subs []domain.PushSubscription
-	err := r.db.WithContext(ctx).Where("user_id = ?", userID).Find(&subs).Error
-	return subs, err
+	var rows []model.PushSubscriptionRow
+	if err := r.db.WithContext(ctx).Where("user_id = ?", userID).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	subs := make([]domain.PushSubscription, 0, len(rows))
+	for _, row := range rows {
+		subs = append(subs, row.ToDomain())
+	}
+	return subs, nil
 }

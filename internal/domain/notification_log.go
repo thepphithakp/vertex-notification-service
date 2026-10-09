@@ -13,18 +13,20 @@ import (
 // บันทึกทุกครั้งที่มีการเรียก SendToUser ไม่ว่า device จะได้รับ push จริง
 // หรือไม่ (ไม่มี subscription เลยก็ยังบันทึก) เพราะ in-app feed ควรเห็นสิ่งที่
 // "ระบบพยายามแจ้ง" ไม่ใช่แค่สิ่งที่ "push ไปถึงเครื่องจริง"
+//
+// 🔴 type นี้เป็น domain ล้วน ไม่มี gorm/json tag — GORM อยู่ที่
+// adapter/repository/model.NotificationLogRow และ wire format ไปอยู่
+// adapter/handler (notificationLogResponse) แทน
 type NotificationLog struct {
-	ID uuid.UUID `gorm:"type:uuid;primaryKey" json:"id"`
+	ID uuid.UUID
 
-	UserID string `gorm:"not null" json:"userId"`
-	Title  string `gorm:"not null" json:"title"`
-	Body   string `gorm:"not null" json:"body"`
-	URL    string `json:"url"`
+	UserID string
+	Title  string
+	Body   string
+	URL    string
 
-	CreatedAt time.Time `gorm:"not null;default:now()" json:"createdAt"`
+	CreatedAt time.Time
 
 	// ReadAt เป็น NULL แปลว่ายังไม่ได้อ่าน — ใช้คำนวณ unread badge
-	ReadAt *time.Time `json:"readAt,omitempty"`
+	ReadAt *time.Time
 }
-
-func (NotificationLog) TableName() string { return "notification_logs" }
